@@ -28,13 +28,14 @@ int main(int arg_c, char const * args[]){
     server_addr.sin_port = htons(PORT);
 
     //convert string 10.10.10.5 into network byte order in server_addr.sin_addr
-    if( inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr) <= 0){
+    //if( inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr) <= 0){
+    if( inet_pton(AF_INET, "192.168.1.33", &server_addr.sin_addr) <= 0){
         printf("\n inet_pton error in converting string IP address into network byte order in server_addr.sin_addr \n");
         return -1;
     }
 
     if(connect(sock, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0 ){
-        printf("connection was not extablished");
+        printf("\nconnection was not extablished\n");
         return -1;
     }
 
