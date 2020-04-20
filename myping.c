@@ -148,7 +148,10 @@ struct sockaddr_in
     sin_family //IPv4 or IPv6 or other
     in_port_t sin_port;	     //Port number.
     struct in_addr sin_addr; // Internet address.
-    
+        //Internet address
+        typedef uint32_t in_addr_t;
+        struct in_addr
+            in_addr_t s_addr;
     //Pad to size of `struct sockaddr'.
     unsigned char sin_zero[sizeof (struct sockaddr) -
 			   __SOCKADDR_COMMON_SIZE -
@@ -159,14 +162,14 @@ struct sockaddr_in
     struct sockaddr_in _sockaddr_in;
     _sockaddr_in.sin_family = _hostent->h_addrtype;
     _sockaddr_in.sin_port = htons(PORT);
-    _sockaddr_in.sin_addr.s_addr = 
-    inet_ntoa( (struct in_addr)*(struct in_addr *) _hostent->h_addr_list[0]);
+    _sockaddr_in.sin_addr.s_addr = *(long *)_hostent->h_addr_list[0];
+    //inet_ntoa( (struct in_addr)*(struct in_addr *) _hostent->h_addr_list[0]);
     
     //creating ICMP socket
     int _icmp_socket_fd;        
     if(_hostent->h_addrtype == AF_INET){
+        //_icmp_socket_fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
         _icmp_socket_fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-
         if(_icmp_socket_fd < 0){
             printf("\n_icmp_socket_fd is negative\n");
             exit(EXIT_FAILURE);
@@ -225,6 +228,7 @@ struct sockaddr_in
 
         struct icmp_packet _icmp_packet; 
         int _msg_count = 0;
+        int _msg_count_recieved = 0;
         while (!_exit_signal){
             //write bytes containing '\0' end string char
             bzero(&_icmp_packet, sizeof(struct icmp_packet));
@@ -248,11 +252,43 @@ struct sockaddr_in
             struct timespec _end_time;
             //clock_gettime(CLOCK_MONOTONIC, &_start_time);      
             clock_gettime(1, &_start_time);       
-
+            int _packet_was_sent = 1;
             if(sendto(_icmp_socket_fd, 
                     &_icmp_packet, sizeof(_icmp_packet), 0,
                     (struct sockaddr *) &_sockaddr_in, sizeof(_sockaddr_in)) <= 0){
-                    //wip
+                    printf("\nSending _icmp_packet failed\n");
+                    _packet_was_sent = 0;
+            }
+
+            struct sockaddr_in _sockaddr_in_recv;
+            int _sockaddr_in_recv_size = sizeof(_sockaddr_in_recv);
+
+            if(recvfrom(_icmp_socket_fd,
+                        &_icmp_packet, sizeof(_icmp_packet),0,
+                        (struct sockaddr *)&_sockaddr_in_recv, &_sockaddr_in_recv_size)
+                        <= 0 && _msg_count > 1){
+                printf("\nrecvfrom _icmp_packet failed\n");
+            }else{
+                //clock_gettime(CLOCK_MONOTONIC, &_start_time);      
+                clock_gettime(1, &_end_time);
+                double _time_left = 
+                                ((double)(_end_time.tv_nsec - _start_time.tv_nsec))
+                                    /1000000.; 
+                long double _round_trip_time_msec = 
+                                (_end_time.tv_sec - _start_time.tv_sec)*1000.
+                                  + _time_left;
+                if(!_packet_was_sent){
+                    if(!(_icmp_packet.hdr.type == 69
+                        && _icmp_packet.hdr.code == 0)){
+                        printf("Something went wrong: _icmp_packet.hdr.type: %d, _icmp_packet.hdr.code: %d",
+                                _icmp_packet.hdr.type, _icmp_packet.hdr.code);
+                    }else{                        
+                        printf("got packet of 64 bytes from %s with IP: %s, _msg_count: %d, ttl: %d, _round_trip_time_msec: %Lf ms.\n",  
+                            args[1], inet_ntoa((struct in_addr)*(struct in_addr *) _hostent->h_addr_list[0]), 
+                            _msg_count, ttl, _round_trip_time_msec);
+                        _msg_count_recieved++;
+                    }   
+                }            
             }
 
 
