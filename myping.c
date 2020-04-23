@@ -1,20 +1,3 @@
-/*#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <errno.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <netinet/ip_icmp.h>
-#include <time.h>
-#include <sys/time.h>
-#include <signal.h>
-#include <fcntl.h>
-#include <time.h>*/
-
 #include <stdio.h> 
 #include <sys/types.h> 
 #include <sys/socket.h> 
@@ -34,7 +17,7 @@
 //#define _POSIX_C_SOURCE 199309L
 #define PORT 0
 
-//source https://www.stev.org/post/cgethostbynameexample
+//ref.: https://www.stev.org/post/cgethostbynameexample
 
 char * _get_name(int h_addrtype){
     if(h_addrtype == AF_INET)
@@ -84,8 +67,8 @@ void _handle_inerupt(int signal){
 
 struct icmp_packet 
 { 
-    struct icmphdr hdr; 
-    char msg[64 - sizeof(struct icmphdr)]; 
+    struct icmphdr hdr; // https://sites.uclouvain.be/SystInfo/usr/include/netinet/ip_icmp.h.html 
+    char msg[64 - sizeof(struct icmphdr)]; //the rest of the 64 bytes is the msg 
 }; 
 
 // checksum calculation 
@@ -135,7 +118,9 @@ int main(int arg_count, char * args[]){
     printf("\n%s %s\n\n",args[0], args[1]);
 
     struct hostent * _hostent;
-    _hostent = gethostbyname(args[1]);
+    _hostent = gethostbyname(args[1]); //the subrutine does a DNS lookup by host name or retruns the ip if ip is passed (in the returned structure) 
+                      // https://www.ibm.com/support/knowledgecenter/ssw_aix_72/communicationtechref/gethostbyname.html 
+		      // http://man7.org/linux/man-pages/man3/gethostbyname.3.html
     _print_host_entry(_hostent);
 
     if(_hostent == NULL){
@@ -160,31 +145,38 @@ struct sockaddr_in
 */
 
     struct sockaddr_in _sockaddr_in;
-    _sockaddr_in.sin_family = _hostent->h_addrtype;
-    _sockaddr_in.sin_port = htons(PORT);
+    _sockaddr_in.sin_family = _hostent->h_addrtype; //gethostbyname returns struct in network order, no need to reorder 
+						    //https://stackoverflow.com/questions/30232733/gethostbyname-and-endianness-how-are-the-bytes-returned
+    _sockaddr_in.sin_port = htons(PORT); //htons (host to network short) orders the bytes in the network order(big endian), if the system orders is different
+    				         // https://stackoverflow.com/questions/19207745/htons-function-in-socket-programing 
     _sockaddr_in.sin_addr.s_addr = *(long *)_hostent->h_addr_list[0];
     //inet_ntoa( (struct in_addr)*(struct in_addr *) _hostent->h_addr_list[0]);
     
     //creating ICMP socket
     int _icmp_socket_fd;        
-    if(_hostent->h_addrtype == AF_INET){
+    if(_hostent->h_addrtype == AF_INET){ //its IPv4 address/network
         //_icmp_socket_fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-        _icmp_socket_fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+        _icmp_socket_fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP); //we tell the socket that will be used with the ICMP 
+		// http://man7.org/linux/man-pages/man2/socket.2.html -> https://pubs.opengroup.org/onlinepubs/009619199/syssocketh.htm 
+		// -> http://man7.org/linux/man-pages/man3/getprotoent.3.html
+		// http://man7.org/linux/man-pages/man5/protocols.5.html iana says its 1 , but here is a header netinet/in.h where it is defiend
+		// this https://stackoverflow.com/questions/13543554/how-to-receive-icmp-request-in-c-with-raw-sockets says that we can send raw icmp datagram
+
         if(_icmp_socket_fd < 0){
             printf("\n_icmp_socket_fd is negative\n");
             exit(EXIT_FAILURE);
         }
         printf("\n_icmp_socket_fd is: %d\n", _icmp_socket_fd);
         
-        //handle kayboard interupt http://man7.org/linux/man-pages/man7/signal.7.html
-        signal(2, _handle_inerupt);    
+        //register a handler for kayboard interupt http://man7.org/linux/man-pages/man7/signal.7.html
+        signal(2, _handle_inerupt);    //to exit the pign
     
         // https://pubs.opengroup.org/onlinepubs/009695399/functions/setsockopt.html
         // the java world https://docs.oracle.com/javase/8/docs/technotes/guides/net/socketOpt.html
         //configure socket details
         int ttl = 64;
         if(setsockopt(_icmp_socket_fd, 
-                   SOL_IP, IP_TTL, 
+                   IPPROTO_IP, IP_TTL, // setting the tll value in the ip protocol header https://www.ibm.com/support/knowledgecenter/en/ssw_ibm_i_71/apis/ssocko.htm   
                    &ttl, sizeof(ttl)) != 0){
             printf("\nsetsockopt: Setting ttl to the IP protocol header failed!\n");
             exit(EXIT_FAILURE);           
@@ -205,9 +197,10 @@ struct sockaddr_in
 
         //bear in mind this http://forums.codeguru.com/showthread.php?353217-example-of-SO_RCVTIMEO-using-setsockopt()
         setsockopt(_icmp_socket_fd,
-                   SOL_SOCKET, SO_RCVTIMEO,
+                   SOL_SOCKET, SO_RCVTIMEO, 
                    (const void *) & _timeval, sizeof(struct timeval));
-
+        //socket layer is set with recieve timeout https://www.ibm.com/support/knowledgecenter/en/ssw_ibm_i_71/apis/ssocko.htm 
+	
         /*
         struct icmp_packet //custom made 
             struct icmphdr hdr; 
@@ -234,7 +227,9 @@ struct sockaddr_in
             bzero(&_icmp_packet, sizeof(struct icmp_packet));
 
             _icmp_packet.hdr.type = ICMP_ECHO;
-            _icmp_packet.hdr.un.echo.id = getpid();
+            //_icmp_packet.hdr.code is default to zero, no need to reassign
+            _icmp_packet.hdr.un.echo.id = getpid(); 
+            // https://stackoverflow.com/questions/25699779/should-i-write-id-to-icmphdr-id-field-when-using-icmp-sockets
             int i=0;
             for(;i<(sizeof _icmp_packet.msg)-1; i++){
                 _icmp_packet.msg[i] = i + '0';
@@ -253,6 +248,7 @@ struct sockaddr_in
             //clock_gettime(CLOCK_MONOTONIC, &_start_time);      
             clock_gettime(1, &_start_time);       
             int _packet_was_sent = 1;
+            // https://www.ibm.com/support/knowledgecenter/en/SSLTBW_2.1.0/com.ibm.zos.v2r1.bpxbd00/sndt.htm
             if(sendto(_icmp_socket_fd, 
                     &_icmp_packet, sizeof(_icmp_packet), 0,
                     (struct sockaddr *) &_sockaddr_in, sizeof(_sockaddr_in)) <= 0){
@@ -260,9 +256,13 @@ struct sockaddr_in
                     _packet_was_sent = 0;
             }
 
+            // https://www.ibm.com/support/knowledgecenter/SSLTBW_2.1.0/com.ibm.zos.v2r1.bpxbd00/rcvf.htm 
+            // http://forums.codeguru.com/showthread.php?533915-How-are-ICMP-replies-associated-with-the-request-socket
+            // And the real explanation: https://www.systutorials.com/docs/linux/man/2-recvfrom/ 
+            // If src_addr is not NULL, and the underlying protocol provides the source address of the message, 
+            // that source address is placed in the buffer pointed to by src_addr -> our _sockaddr_in_recv.
             struct sockaddr_in _sockaddr_in_recv;
             int _sockaddr_in_recv_size = sizeof(_sockaddr_in_recv);
-
             if(recvfrom(_icmp_socket_fd,
                         &_icmp_packet, sizeof(_icmp_packet),0,
                         (struct sockaddr *)&_sockaddr_in_recv, &_sockaddr_in_recv_size)
@@ -277,7 +277,9 @@ struct sockaddr_in
                 long double _round_trip_time_msec = 
                                 (_end_time.tv_sec - _start_time.tv_sec)*1000.
                                   + _time_left;
-                if(!_packet_was_sent){
+      
+                if(_packet_was_sent){
+                
                     if(!(_icmp_packet.hdr.type == 69
                         && _icmp_packet.hdr.code == 0)){
                         printf("Something went wrong: _icmp_packet.hdr.type: %d, _icmp_packet.hdr.code: %d",
