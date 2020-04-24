@@ -17,6 +17,9 @@
 //#define _POSIX_C_SOURCE 199309L
 #define PORT 0
 
+//main program flow used from her: https://www.geeksforgeeks.org/ping-in-c/ 
+
+
 //ref.: https://www.stev.org/post/cgethostbynameexample
 
 char * _get_name(int h_addrtype){
